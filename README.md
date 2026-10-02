@@ -129,20 +129,32 @@ future inline-JS integration.
      never prefix it with `NEXT_PUBLIC_`)*
    - **Public Key** (`pk_test_…`) → `NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY`
 3. Set `NEXT_PUBLIC_SITE_URL` to the origin Paystack should send the customer
-   back to — it **must be `https://` and must not be localhost**:
+   back to:
    - production: your Vercel URL, e.g. `https://naijabites.vercel.app`
-   - local testing: an HTTPS tunnel, e.g. `ngrok http 3000` → use the
-     `https://<random>.ngrok.app` address it prints
+     (**must be `https://`, never localhost**)
+   - local testing: `http://localhost:3000` works (see the manual step below),
+     or use an HTTPS tunnel, e.g. `ngrok http 3000` → the
+     `https://<random>.ngrok.app` address it prints, for real redirects
 4. Restart `npm run dev`.
 
 > ⚠️ **Paystack will not redirect a customer to `http://localhost:3000`.**
 > Paystack's docs on the callback URL say: *"Ensure that it only redirects to an
 > HTTPS site"* and *"Ensure you don't use localhost as your callback URL"*. The
 > initialize call still succeeds and the test card is still charged, but the
-> browser is left sitting on `checkout.paystack.com` and **no order is created** —
-> a silent, money-taking failure. So the app now **refuses to start a payment**
-> when the callback URL isn't a public HTTPS URL: the customer sees an
-> explanation on the checkout page and the server log says exactly what to fix.
+> browser is left sitting on `checkout.paystack.com` and **no order is created**
+> until the verify URL is opened. What the app does depends on `NODE_ENV`:
+>
+> | Environment | callback URL is localhost / `http://` |
+> |---|---|
+> | **Production** (`npm run build` + `start`, Vercel) | **Refused with a 503** — no payment is started, the customer sees an explanation, and the server log says what to fix. Charging someone we can't send back to the store is worse than not charging. |
+> | **Development** (`npm run dev`) | **Warns in the server log and still initializes.** The checkout page stays put and shows a *"Local testing"* panel with two steps. |
+>
+> **Local manual step.** On `localhost`, click **Pay with Paystack**, then in the
+> panel: (1) open the Paystack checkout in the new tab and pay with the test card,
+> (2) come back and open the verify link it shows —
+> `http://localhost:3000/api/paystack/verify?reference=<reference>` — which
+> verifies the payment with Paystack and creates the order. The panel survives a
+> refresh and is cleared automatically once the order exists.
 
 **The callback URL is sent with every transaction — leave the dashboard field
 blank.** Paystack's Initialize Transaction endpoint takes a `callback_url` that
@@ -178,9 +190,10 @@ Other test numbers (declined / insufficient funds) are listed in Paystack's
 [test payments docs](https://paystack.com/docs/payments/test-payments/).
 
 **What to test (G9):**
-- *Prerequisite:* `NEXT_PUBLIC_SITE_URL` must be an `https://` URL (tunnel or
-  deployed domain). With localhost the checkout deliberately refuses to start a
-  payment instead of charging you and creating nothing.
+- *Prerequisite:* in production `NEXT_PUBLIC_SITE_URL` must be an `https://`
+  URL (the checkout refuses to start a payment otherwise). Locally, either use
+  an HTTPS tunnel for normal redirects, or stay on `http://localhost:3000` and
+  finish each payment by opening the verify link the checkout page shows.
 - Add a few items → **Cart** shows them with a live header badge, and they
   survive a page refresh.
 - **Proceed to checkout** while signed out → redirected to `/signin`, then back

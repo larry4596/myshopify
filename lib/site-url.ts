@@ -107,6 +107,18 @@ export function getPaystackCallbackUrl(request?: Request): string {
 }
 
 /**
+ * The manual verify link, shown in the checkout UI when Paystack cannot
+ * redirect the browser back (development only — see the initialize route).
+ *
+ * `http://localhost:3000/api/paystack/verify` + ref `NB-x` →
+ * `http://localhost:3000/api/paystack/verify?reference=NB-x`
+ */
+export function buildManualVerifyUrl(callbackUrl: string, reference: string): string {
+  const separator = callbackUrl.includes("?") ? "&" : "?";
+  return `${callbackUrl}${separator}reference=${encodeURIComponent(reference)}`;
+}
+
+/**
  * Can Paystack actually redirect a customer to this URL?
  *
  * Only a public HTTPS URL qualifies — Paystack documents that `http://` and

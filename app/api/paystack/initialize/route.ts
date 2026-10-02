@@ -3,7 +3,7 @@ import { randomUUID } from "crypto";
 import { auth } from "@/auth";
 import { priceCart, isRawCartItem, type RawCartItem } from "@/lib/pricing";
 import { initializeTransaction, isPaystackConfigured } from "@/lib/paystack";
-import { getPaystackCallbackUrl, isPaystackRedirectable, resolveSiteUrl } from "@/lib/site-url";
+import { getPaystackCallbackUrl, isPaystackRedirectable, resolveSiteUrl, buildManualVerifyUrl } from "@/lib/site-url";
 
 /**
  * POST /api/paystack/initialize (PRD FR4.4)
@@ -140,11 +140,20 @@ export async function POST(request: Request) {
   const { source } = resolveSiteUrl(request);
   const callbackUrl = getPaystackCallbackUrl(request);
 
-  // Paystack only redirects to a public HTTPS URL: it documents that http://
-  // and localhost callback URLs are not redirected to (the customer is left on
-  // checkout.paystack.com and no order can be created). Refuse to take money we
-  // cannot fulfil, and say exactly how to fix it.
-  if (!isPaystackRedirectable(callbackUrl)) {
+  // Paystack only returns a customer to a public HTTPS URL; its docs say
+  // "Ensure that it only redirects to an HTTPS site" and "Ensure you don't use
+  // localhost as your callback URL". What we do about that depends on where we
+  // are running:
+  //
+  //   production  → refuse the payment (503). Charging someone we cannot return
+  //                 to the store is worse than not charging them at all.
+  //   development → warn and carry on. Forcing an HTTPS tunnel for every local
+  //                 test is unreasonable, so the payment proceeds and the
+  //                 customer finishes it by opening the verify URL BY HAND —
+  //                 the checkout UI shows them that link (see `manualCallback`).
+  const isProduction = process.env.NODE_ENV === "production";
+
+  if (!isPaystackRedirectable(callbackUrl) && isProduction) {
     console.error(
       `[paystack] refusing to initialize: callback_url "${callbackUrl}" ` +
         `(source: ${source}) is not a public HTTPS URL. Paystack will not ` +
@@ -163,6 +172,20 @@ export async function POST(request: Request) {
         callbackUrl,
       },
       { status: 503 },
+    );
+  }
+
+  // Development with a localhost/http callback: Paystack will take the money and
+  // then leave the browser on checkout.paystack.com. That is fine locally as
+  // long as the customer is told how to finish — warn loudly and continue.
+  if (!isPaystackRedirectable(callbackUrl)) {
+    console.warn(
+      `[paystack] development mode: callback_url "${callbackUrl}" (from ${source}) ` +
+        `is not a public HTTPS URL, so Paystack will NOT redirect the browser back. ` +
+        `The payment still works — after paying on Paystack, open this URL by hand ` +
+        `to create the order: ${callbackUrl}?reference=<reference>. ` +
+        `For real redirects locally, set NEXT_PUBLIC_SITE_URL to an https tunnel ` +
+        `(e.g. "ngrok http 3000") and restart the dev server.`,
     );
   }
 
@@ -195,10 +218,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: initialized.message }, { status: 502 });
   }
 
+  // When Paystack can't redirect (localhost in development), give the UI the
+  // link the customer must open by hand after paying. Built from the reference
+  // Paystack confirmed, so the two can never drift apart.
+  const manualVerifyUrl = isPaystackRedirectable(callbackUrl)
+    ? null
+    : buildManualVerifyUrl(callbackUrl, initialized.reference);
+
   return NextResponse.json({
     authorizationUrl: initialized.authorizationUrl,
     reference: initialized.reference,
     /** Echoed for debugging: the exact URL Paystack will return the browser to. */
     callbackUrl,
+    /**
+     * `null` in the normal (redirect) case. Otherwise the checkout UI shows
+     * "pay in a new tab, then open this verify URL yourself".
+     */
+    manualCallback: manualVerifyUrl ? { verifyUrl: manualVerifyUrl } : null,
   });
 }

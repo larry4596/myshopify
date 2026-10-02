@@ -3,6 +3,13 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useCart } from "@/components/CartProvider";
+import LocalPaymentNotice from "@/components/LocalPaymentNotice";
+import {
+  clearPendingPayment,
+  readPendingPayment,
+  savePendingPayment,
+  type PendingPayment,
+} from "@/lib/pending-payment";
 import { formatNaira, getProductBySlug } from "@/lib/products";
 
 /**
@@ -92,6 +99,8 @@ export default function CheckoutForm({
   });
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  /** Development only: a payment Paystack can't redirect back (see the notice). */
+  const [manual, setManual] = useState<PendingPayment | null>(null);
 
   // Prefill from the last checkout (client-only, so no hydration mismatch).
   useEffect(() => {
@@ -104,6 +113,17 @@ export default function CheckoutForm({
       notes: current.notes || draft.notes,
     }));
   }, []);
+
+  // A local payment may still be waiting to be finished by hand — the notice
+  // has to survive the trip to Paystack's tab, a refresh, or an emptied cart.
+  useEffect(() => {
+    setManual(readPendingPayment());
+  }, []);
+
+  const dismissManual = () => {
+    clearPendingPayment();
+    setManual(null);
+  };
 
   const routeError = errorCode
     ? (errorMessages[errorCode] ?? GENERIC_ERROR)
@@ -146,6 +166,8 @@ export default function CheckoutForm({
         authorizationUrl?: string;
         message?: string;
         detail?: string;
+        reference?: string;
+        manualCallback?: { verifyUrl?: string } | null;
       } | null;
 
       if (!response.ok || !payload?.authorizationUrl) {
@@ -162,6 +184,23 @@ export default function CheckoutForm({
         notes: form.notes,
       });
 
+      // Development with a localhost callback: Paystack will take the payment
+      // but never redirect back, so DON'T navigate away — this page holds the
+      // verify link the customer has to open by hand (FR4.5 locally).
+      const verifyUrl = payload.manualCallback?.verifyUrl;
+      if (verifyUrl && payload.reference) {
+        const pending: PendingPayment = {
+          reference: payload.reference,
+          authorizationUrl: payload.authorizationUrl,
+          verifyUrl,
+          createdAt: Date.now(),
+        };
+        savePendingPayment(pending);
+        setManual(pending);
+        setSubmitting(false);
+        return;
+      }
+
       // Off to Paystack. `submitting` stays true so the button can't be
       // pressed twice while the browser navigates away.
       window.location.assign(payload.authorizationUrl);
@@ -175,16 +214,21 @@ export default function CheckoutForm({
 
   if (!hydrated) {
     return (
-      <div className="mt-8" aria-hidden>
-        <div className="h-64 animate-pulse rounded-2xl bg-white ring-1 ring-black/5" />
+      <div className="mt-8">
+        <LocalPaymentNotice payment={manual} onDismiss={dismissManual} />
+        <div className="h-64 animate-pulse rounded-2xl bg-white ring-1 ring-black/5" aria-hidden />
       </div>
     );
   }
 
   // Nothing to pay for — send them shopping instead of to Paystack (FR4.3).
+  // A pending local payment is still shown above, so the verify link stays
+  // reachable even after the cart has been emptied.
   if (items.length === 0) {
     return (
-      <div className="mt-8 rounded-2xl bg-white p-10 text-center ring-1 ring-black/5">
+      <div className="mt-8">
+        <LocalPaymentNotice payment={manual} onDismiss={dismissManual} />
+        <div className="rounded-2xl bg-white p-10 text-center ring-1 ring-black/5">
         <p className="text-5xl" aria-hidden>
           🧾
         </p>
@@ -206,12 +250,15 @@ export default function CheckoutForm({
         >
           Browse the menu
         </Link>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="mt-8 grid gap-6 lg:grid-cols-[1.2fr_1fr]">
+    <div className="mt-8">
+      <LocalPaymentNotice payment={manual} onDismiss={dismissManual} />
+      <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
       {/* Delivery details (FR4.3) */}
       <form
         onSubmit={handleSubmit}
@@ -387,6 +434,7 @@ export default function CheckoutForm({
           ← Back to cart
         </Link>
       </aside>
+      </div>
     </div>
   );
 }
