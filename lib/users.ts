@@ -71,9 +71,49 @@ export async function upsertUser(user: SyncableUser): Promise<SyncResult> {
     { onConflict: "id" },
   );
 
-  if (error) {
-    console.error("[users] sync failed:", error.message);
-    return { ok: false, message: error.message };
+  if (!error) return { ok: true };
+
+  // 23505 = unique_violation. The usual cause here is an `email` already
+  // belonging to a DIFFERENT row — a stale row from Phase 3 testing or a
+  // manual Table-Editor edit. The upsert above cannot fix that, but if the
+  // row for THIS account's id already exists we can still refresh it without
+  // touching the contested email (FR2.4: sync must never break sign-in).
+  if (error.code === "23505") {
+    const { data: existing, error: lookupError } = await db
+      .from("users")
+      .select("id")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (lookupError) {
+      console.error("[users] sync failed:", lookupError.message);
+      return { ok: false, message: lookupError.message };
+    }
+
+    if (existing) {
+      const { error: updateError } = await db
+        .from("users")
+        .update({ name: user.name ?? null, image: user.image ?? null })
+        .eq("id", user.id);
+
+      if (updateError) {
+        console.error("[users] sync failed:", updateError.message);
+        return { ok: false, message: updateError.message };
+      }
+      return { ok: true };
+    }
+
+    // No row for this id and the email is owned by another id — nothing this
+    // layer can safely reconcile. Say exactly what to fix instead of a bare
+    // error, so the next failure isn't a mystery (see README).
+    console.error(
+      `[users] sync failed: email "${user.email}" is already used by a different ` +
+        `user id and no row exists for this account's id (${user.id}). ` +
+        `Reconcile the duplicate in the Supabase SQL Editor.`,
+    );
+    return { ok: false, message: `email already in use: ${error.message}` };
   }
-  return { ok: true };
+
+  console.error("[users] sync failed:", error.message);
+  return { ok: false, message: error.message };
 }
