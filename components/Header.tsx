@@ -1,10 +1,11 @@
 import Link from "next/link";
+import AuthMenu from "@/components/AuthMenu";
 
 /**
  * Site header.
  *
- * Phase 1: static navigation + a placeholder "Sign in" button.
- * Phase 2: the button becomes real Google sign-in (Auth.js).
+ * Phase 1: static navigation + placeholder sign-in button.
+ * Phase 2: AuthMenu (client) shows real Google sign-in / avatar + sign out.
  * Phase 4: the Cart link gets a live item-count badge.
  */
 
@@ -43,15 +44,9 @@ export default function Header() {
           ))}
         </nav>
 
-        {/* Actions */}
+        {/* Actions — real auth state (Phase 2) */}
         <div className="flex items-center gap-3">
-          {/* Phase 2: replaced by session-aware user menu (avatar + sign out) */}
-          <button
-            type="button"
-            className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-dark"
-          >
-            Sign in
-          </button>
+          <AuthMenu />
         </div>
       </div>
 

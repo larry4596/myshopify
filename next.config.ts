@@ -15,6 +15,10 @@ const nextConfig: NextConfig = {
     // Remove this once the images are replaced with real photos (JPG/PNG).
     dangerouslyAllowSVG: true,
     contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
+    remotePatterns: [
+      // Signed-in user avatars come from Google profile photos.
+      { protocol: "https", hostname: "lh3.googleusercontent.com" },
+    ],
   },
 };
 
