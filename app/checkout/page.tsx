@@ -1,17 +1,27 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { auth } from "@/auth";
 
 export const metadata: Metadata = {
   title: "Checkout",
 };
 
 /**
- * Checkout page.
+ * Checkout page (FR2.5: sign-in required).
+ * Unauthenticated visitors are sent to /signin and returned here after
+ * signing in via `callbackUrl`.
+ *
  * Phase 1: empty-state shell.
  * Phase 4: delivery form (name, phone, address, notes) + order summary +
- *          Paystack Test Mode payment. Requires sign-in (Phase 2).
+ *          Paystack Test Mode payment.
  */
-export default function CheckoutPage() {
+export default async function CheckoutPage() {
+  const session = await auth();
+  if (!session) {
+    redirect(`/signin?callbackUrl=${encodeURIComponent("/checkout")}`);
+  }
+
   return (
     <div className="mx-auto max-w-3xl px-4 py-16 text-center sm:px-6">
       <h1 className="text-3xl font-extrabold tracking-tight text-brand">

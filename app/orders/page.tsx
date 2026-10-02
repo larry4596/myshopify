@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { auth } from "@/auth";
 
 export const metadata: Metadata = {
   title: "My Orders",
@@ -8,11 +10,17 @@ export const metadata: Metadata = {
 /**
  * Orders page — the most important page for HNG's persistence test.
  *
- * Phase 1: placeholder shell.
- * Phase 3: requires sign-in and lists this user's orders from Supabase, so
- *          they remain visible after logout / closing the browser / re-login.
+ * Phase 2 (FR2.5): requires sign-in — visitors are redirected to /signin
+ * and brought back here afterwards.
+ * Phase 3: lists this user's orders from Supabase, so they remain visible
+ *          after logout / closing the browser / re-login.
  */
-export default function OrdersPage() {
+export default async function OrdersPage() {
+  const session = await auth();
+  if (!session) {
+    redirect(`/signin?callbackUrl=${encodeURIComponent("/orders")}`);
+  }
+
   return (
     <div className="mx-auto max-w-3xl px-4 py-16 text-center sm:px-6">
       <h1 className="text-3xl font-extrabold tracking-tight text-brand">
