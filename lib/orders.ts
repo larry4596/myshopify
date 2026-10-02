@@ -119,26 +119,68 @@ export type CreateOrderInput = {
   customerPhone: string;
   address: string;
   notes?: string | null;
+  /**
+   * The verified Paystack reference (FR4.5). Stored on the order and unique in
+   * the database, so a refreshed/replayed callback can only ever produce ONE
+   * order (no double-charging, no duplicate rows).
+   */
+  paystackReference: string;
 };
 
 export type CreateOrderResult =
   | { status: "ok"; orderId: string }
+  | { status: "already_created"; orderId: string }
   | { status: "unconfigured" }
   | { status: "error"; message: string };
+
+/**
+ * Has this Paystack reference already produced an order? (FR4.5 idempotency.)
+ *
+ * The verify route runs on every return from Paystack — including a manual
+ * refresh of the callback URL — so this lookup is what stops a second order
+ * from being created for the same payment.
+ */
+export async function findOrderIdByReference(
+  paystackReference: string,
+): Promise<{ status: "found"; orderId: string } | { status: "missing" } | { status: "unconfigured" } | { status: "error" }> {
+  const db = getSupabaseAdmin();
+  if (!db) return { status: "unconfigured" };
+
+  const { data, error } = await db
+    .from("orders")
+    .select("id")
+    .eq("paystack_reference", paystackReference)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[orders] reference lookup failed:", error.message);
+    return { status: "error" };
+  }
+  return data ? { status: "found", orderId: data.id } : { status: "missing" };
+}
 
 /**
  * Atomically create an order + items via the `create_order` Postgres
  * function (FR3.5). Prices are re-derived from `products` inside the
  * function — this wrapper's `items` carry slugs and quantities ONLY.
  *
- * Wires up Phase 4 checkout: call only after Paystack payment is verified
- * server-side (FR4.5/FR4.7).
+ * Called from /api/paystack/verify once a payment is CONFIRMED (FR4.5/FR4.7):
+ * an order can never be created without a verified Paystack payment.
  */
 export async function createOrder(
   input: CreateOrderInput,
 ): Promise<CreateOrderResult> {
   const db = getSupabaseAdmin();
   if (!db) return { status: "unconfigured" };
+
+  // A retry after a partial failure must not create a second order.
+  const existing = await findOrderIdByReference(input.paystackReference);
+  if (existing.status === "found") {
+    return { status: "already_created", orderId: existing.orderId };
+  }
+  if (existing.status === "error" || existing.status === "unconfigured") {
+    return { status: "error", message: "Could not check for an existing order" };
+  }
 
   // The orders FK requires the user row; upsert again in case the sign-in
   // sync was skipped (e.g. Supabase was configured after they signed in).
@@ -155,10 +197,27 @@ export async function createOrder(
     p_address: input.address,
     p_notes: input.notes ?? null,
     p_status: "paid",
+    p_paystack_reference: input.paystackReference,
   });
 
   if (error) {
+    // 23505 = unique_violation: a concurrent callback won the race and created
+    // the order first. That's success for the customer, so return that order.
+    if (error.code === "23505") {
+      const again = await findOrderIdByReference(input.paystackReference);
+      if (again.status === "found") {
+        return { status: "already_created", orderId: again.orderId };
+      }
+    }
     console.error("[orders] create_order failed:", error.message);
+    // The most likely cause in this project: the Phase 3 function in Supabase
+    // predates the Phase 4 `p_paystack_reference` argument. Say so loudly.
+    if (/p_paystack_reference|create_order/i.test(error.message)) {
+      console.error(
+        "[orders] create_order looks out of date — re-run supabase/schema.sql " +
+          "(idempotent) to add p_paystack_reference and the paystack_reference column.",
+      );
+    }
     return { status: "error", message: error.message };
   }
 

@@ -89,6 +89,8 @@ export type Database = {
           notes: string | null;
           paid_at: string | null;
           created_at: string;
+          /** Paystack reference that paid for this order (unique; FR4.5). */
+          paystack_reference: string | null;
         };
         Insert: {
           id?: string;
@@ -103,6 +105,7 @@ export type Database = {
           notes?: string | null;
           paid_at?: string | null;
           created_at?: string;
+          paystack_reference?: string | null;
         };
         Update: {
           id?: string;
@@ -117,6 +120,7 @@ export type Database = {
           notes?: string | null;
           paid_at?: string | null;
           created_at?: string;
+          paystack_reference?: string | null;
         };
         Relationships: [
           {
@@ -179,6 +183,7 @@ export type Database = {
           p_address: string;
           p_notes?: string | null;
           p_status?: string;
+          p_paystack_reference?: string | null;
         };
         Returns: string;
       };

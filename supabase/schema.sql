@@ -52,7 +52,23 @@ create table if not exists public.orders (
   created_at     timestamptz not null default now()
 );
 
--- ----------------------------------------------------------- order_items (PRD §8)
+-- ---------------------------------------- Phase 4 migration (PRD FR4.5/FR4.7)
+-- ALREADY RAN THIS FILE IN PHASE 3? Just re-run the whole file — it is
+-- idempotent (everything is `if not exists` / `create or replace`). By hand:
+--   1. alter table public.orders add column if not exists paystack_reference text;
+--   2. create unique index if not exists orders_paystack_reference_idx
+--        on public.orders (paystack_reference) where paystack_reference is not null;
+--   3. replace create_order with the version at the bottom of this file
+--      (including its DROP statement and grants).
+--
+-- The Paystack reference that paid for the order. UNIQUE, so re-entering the
+-- Paystack callback (refresh, retry, duplicate webhook) can never create a
+-- second order for the same payment — the route returns the existing one.
+alter table public.orders add column if not exists paystack_reference text;
+create unique index if not exists orders_paystack_reference_idx
+  on public.orders (paystack_reference) where paystack_reference is not null;
+
+-- --------------------------------------------------------- order_items (PRD §8)
 -- product_name / unit_price_kobo are snapshots taken at purchase time so
 -- historical orders stay correct even if the product later changes.
 create table if not exists public.order_items (
@@ -89,6 +105,13 @@ alter table public.order_items enable row level security;
 --   here, never trusted from the caller (PRD FR4.7).
 --
 -- Returns the new order's id (uuid).
+--
+-- Phase 4 added `p_paystack_reference`. A new parameter would create an
+-- OVERLOAD of the Phase 3 function rather than replacing it (so PostgREST
+-- couldn't choose between them), hence the explicit DROP of the old signature
+-- first. This is safe to re-run.
+drop function if exists public.create_order(uuid, jsonb, text, text, text, text, text);
+
 create or replace function public.create_order(
   p_user_id        uuid,
   p_items          jsonb,
@@ -96,7 +119,8 @@ create or replace function public.create_order(
   p_customer_phone text,
   p_address        text,
   p_notes          text default null,
-  p_status         text default 'paid'
+  p_status         text default 'paid',
+  p_paystack_reference text default null
 ) returns uuid
 language plpgsql
 security definer
@@ -188,12 +212,14 @@ begin
   -- ------------------------------ order + items atomically (one transaction)
   insert into public.orders (
     order_number, user_id, status, total_kobo,
-    customer_name, customer_phone, address, notes, paid_at
+    customer_name, customer_phone, address, notes, paid_at,
+    paystack_reference
   ) values (
     v_order_number, p_user_id, p_status, v_total,
     trim(p_customer_name), trim(p_customer_phone), trim(p_address),
     p_notes,
-    case when p_status = 'paid' then now() else null end
+    case when p_status = 'paid' then now() else null end,
+    nullif(trim(coalesce(p_paystack_reference, '')), '')
   )
   returning id into v_order_id;
 
@@ -214,8 +240,8 @@ $$;
 
 -- Only the server (service-role / secret key) may execute create_order.
 -- Supabase grants EXECUTE to anon/authenticated by default, so revoke explicitly:
-revoke all on function public.create_order(uuid, jsonb, text, text, text, text, text)
+revoke all on function public.create_order(uuid, jsonb, text, text, text, text, text, text)
   from public, anon, authenticated;
-grant execute on function public.create_order(uuid, jsonb, text, text, text, text, text)
+grant execute on function public.create_order(uuid, jsonb, text, text, text, text, text, text)
   to service_role;
 
