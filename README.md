@@ -20,8 +20,8 @@ See [`PRD.md`](./PRD.md) for the full Product Requirements Document.
 | 1 | Project setup + PRD + basic shop UI | ✅ Done |
 | 2 | Authentication — Google OAuth (Auth.js) | ✅ Done |
 | 3 | Supabase schema + order persistence | ✅ Done |
-| 4 | Cart + Checkout + Paystack Test Mode | ⏳ Next |
-| 5 | Mailgun confirmation email | ⏳ |
+| 4 | Cart + Checkout + Paystack Test Mode | ✅ Done |
+| 5 | Mailgun confirmation email | ⏳ Next |
 | 6 | Vercel deployment + environment variables | ⏳ |
 | 7 | End-to-end testing checklist | ⏳ |
 
@@ -31,7 +31,8 @@ See [`PRD.md`](./PRD.md) for the full Product Requirements Document.
 - **Tailwind CSS v4** — brand tokens live in `app/globals.css`
 - **Auth.js v5 (NextAuth)** with Google provider — JWT sessions ✅ *Phase 2*
 - **Supabase** (Postgres) — RLS-enabled tables, service-role access only ✅ *Phase 3*
-- **Paystack** Test Mode — *Phase 4*
+- **Cart** — React Context + `localStorage` (survives refresh, works signed-out) ✅ *Phase 4*
+- **Paystack** Test Mode — server-priced, verified server-side before fulfillment ✅ *Phase 4*
 - **Mailgun** — *Phase 5*
 - **Vercel** hosting — *Phase 6*
 
@@ -87,6 +88,12 @@ Order history lives in Supabase (Postgres). One-time setup:
 2. Open **SQL Editor → New query**, paste the entire contents of
    [`supabase/schema.sql`](./supabase/schema.sql) and **Run**. Then do the
    same with [`supabase/seed.sql`](./supabase/seed.sql) (the 6 products).
+
+   ℹ️ **Already ran Phase 3's schema?** Don't skip this — Phase 4 extends it
+   (the `orders.paystack_reference` column and the extra `create_order`
+   argument). Running `schema.sql` again is safe: every statement is
+   `if not exists` / `create or replace`. There are two ready-to-paste
+   statements at the top of that file if you prefer doing it by hand.
 3. Go to **Settings → API Keys** and copy:
    - **Project URL** → `NEXT_PUBLIC_SUPABASE_URL`
    - **Secret key** (`sb_secret_…`, the service-role replacement) →
@@ -109,6 +116,61 @@ Order history lives in Supabase (Postgres). One-time setup:
   SQL Editor using your `users.id` (see the comment at the bottom of
   `supabase/seed.sql`).
 
+### Paystack Test Mode setup (Phase 4)
+
+Checkout runs through Paystack's **hosted** checkout page (redirect flow), so
+only the server-side secret key is required — the public key is kept for a
+future inline-JS integration.
+
+1. Create a free account at [paystack.com](https://paystack.com) and make sure
+   the dashboard is in **Test Mode** (toggle at the top of the sidebar).
+2. **Settings → API Keys & Webhooks → Test keys**:
+   - **Secret Key** (`sk_test_…`) → `PAYSTACK_SECRET_KEY` *(server-only —
+     never prefix it with `NEXT_PUBLIC_`)*
+   - **Public Key** (`pk_test_…`) → `NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY`
+3. Set `NEXT_PUBLIC_SITE_URL` to the origin Paystack should send the customer
+   back to:
+   - local: `http://localhost:3000`
+   - production: your Vercel URL
+4. Restart `npm run dev`.
+
+**No webhook is needed.** Paystack redirects the browser back to
+`<NEXT_PUBLIC_SITE_URL>/api/paystack/verify`, which calls Paystack's verify
+API, compares the amount against the server-priced cart, and only then creates
+the order.
+
+**Paystack test card**
+
+| Field | Value |
+|-------|-------|
+| Card number | `4084 0840 8408 4081` |
+| CVV | `408` |
+| Expiry | any future date |
+| PIN | `0000` |
+| OTP | `123456` |
+
+Other test numbers (declined / insufficient funds) are listed in Paystack's
+[test payments docs](https://paystack.com/docs/payments/test-payments/).
+
+**What to test (G9):**
+- Add a few items → **Cart** shows them with a live header badge, and they
+  survive a page refresh.
+- **Proceed to checkout** while signed out → redirected to `/signin`, then back
+  to checkout with the cart intact.
+- Fill in name/phone/address → **Pay with Paystack** → redirected to Paystack →
+  pay with the test card → redirected back to **/checkout/success**.
+- The success page shows the **order number** (e.g. `NB-20260210-A1B2`), the
+  itemised total and a "View receipt" link; the cart is now empty.
+- **/orders** lists the new order — and it is still there after signing out,
+  closing the browser and signing in again (G2/G4).
+- Paystack **Dashboard → Transactions** shows the same reference, marked
+  *success* (test mode).
+- **Idempotency:** refresh the success page / re-open the callback URL → no
+  duplicate order is created (`orders.paystack_reference` is unique).
+- **Failure path:** on Paystack, choose *Cancel* or use a declined test card →
+  you land back on `/checkout` with a readable message and **no order row** is
+  created (FR4.7).
+
 ### Scripts
 
 | Command | What it does |
@@ -122,30 +184,55 @@ Order history lives in Supabase (Postgres). One-time setup:
 
 ```
 app/
-  layout.tsx              Root layout (AuthProvider + Header + Footer, metadata, fonts)
+  layout.tsx              Root layout (AuthProvider + CartProvider + Header + Footer)
   page.tsx                Home: hero + menu grid
   products/[slug]/        Product detail pages (pre-rendered)
   signin/                 Branded Google sign-in page (Auth.js pages.signIn)
-  cart/                   Cart (shell now, live cart in Phase 4)
-  checkout/               Checkout (sign-in required; Paystack in Phase 4)
+  cart/                   Cart page (live localStorage cart)
+  checkout/               Checkout: delivery form + summary + "Pay with Paystack"
+  checkout/success/       Post-payment receipt (order number, items, total)
   orders/                 Order history from Supabase (sign-in required)
   api/auth/[...nextauth]/ Auth.js route handler (signin/signout/callback/session)
+  api/paystack/initialize/ Creates the Paystack transaction, server-priced (FR4.4)
+  api/paystack/verify/    Paystack callback: verify → create order (FR4.5-FR4.7)
   not-found.tsx           Custom 404
   globals.css             Tailwind + NaijaBites brand tokens
 auth.ts                   Auth.js v5 config (Google provider, JWT sessions,
                           user sync on sign-in)
 components/               Header, Footer, ProductCard, QuantityStepper,
-                          AuthProvider, AuthMenu, SignInButton, OrderCard
-lib/products.ts           Typed product catalog + ₦ price formatter
+                          AuthProvider, AuthMenu, SignInButton, OrderCard,
+                          CartProvider, CartNavLink, CartView, AddToCartButton,
+                          AddToCartPanel, CheckoutForm, ClearCartOnSuccess
+lib/products.ts           Typed product catalog + ₦ price formatter (client-safe)
 lib/supabase.ts           Server-only service-role client (RLS bypass)
 lib/users.ts              UUIDv5 user ids + public.users sync (FR2.4)
-lib/orders.ts             Order history query + create_order RPC wrapper
+lib/orders.ts             Order history query + idempotent create_order wrapper
+lib/pricing.ts            Server-side cart pricing (never trusts the browser)
+lib/paystack.ts           Server-only Paystack initialize/verify client
+lib/site-url.ts           The origin Paystack should call back to
 lib/database.types.ts     Hand-written Supabase table types
 supabase/schema.sql       Tables, RLS, create_order function (run in SQL Editor)
 supabase/seed.sql         The 6 products (run after schema.sql)
 types/next-auth.d.ts      Session type augmentation (session.user.id)
 public/products/          Product images (replace files, keep filenames)
 ```
+
+## How the payment flow is secured
+
+The browser is never trusted with money (PRD FR4.7):
+
+1. The cart in `localStorage` holds **only** `{slug, quantity}` — no prices.
+2. `/api/paystack/initialize` reads every price from `products` and computes
+   the total **server-side** before telling Paystack how much to charge.
+3. The delivery details travel in the Paystack `metadata`, and are read back
+   from Paystack's own verify response — never from the browser.
+4. `/api/paystack/verify` only creates an order when Paystack reports
+   `status: "success"`, the amount matches the re-priced cart, and the payment
+   belongs to the signed-in user.
+5. `create_order` re-prices every line **again** inside the database
+   transaction, so even a direct RPC call cannot set its own prices.
+6. `orders.paystack_reference` is unique → refreshing the callback (or a
+   duplicate callback) can never create a second order for the same payment.
 
 ## Environment variables
 
