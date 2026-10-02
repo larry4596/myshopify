@@ -19,8 +19,8 @@ See [`PRD.md`](./PRD.md) for the full Product Requirements Document.
 |------:|-------------|--------|
 | 1 | Project setup + PRD + basic shop UI | ✅ Done |
 | 2 | Authentication — Google OAuth (Auth.js) | ✅ Done |
-| 3 | Supabase schema + order persistence | ⏳ Next |
-| 4 | Cart + Checkout + Paystack Test Mode | ⏳ |
+| 3 | Supabase schema + order persistence | ✅ Done |
+| 4 | Cart + Checkout + Paystack Test Mode | ⏳ Next |
 | 5 | Mailgun confirmation email | ⏳ |
 | 6 | Vercel deployment + environment variables | ⏳ |
 | 7 | End-to-end testing checklist | ⏳ |
@@ -30,7 +30,7 @@ See [`PRD.md`](./PRD.md) for the full Product Requirements Document.
 - **Next.js 15.5** (App Router) + **TypeScript** + **React 19**
 - **Tailwind CSS v4** — brand tokens live in `app/globals.css`
 - **Auth.js v5 (NextAuth)** with Google provider — JWT sessions ✅ *Phase 2*
-- **Supabase** (Postgres) — *Phase 3*
+- **Supabase** (Postgres) — RLS-enabled tables, service-role access only ✅ *Phase 3*
 - **Paystack** Test Mode — *Phase 4*
 - **Mailgun** — *Phase 5*
 - **Vercel** hosting — *Phase 6*
@@ -79,6 +79,36 @@ consent → back on the site your avatar + name appear; `/checkout` and
 `/orders` redirect to `/signin` when signed out; **Sign out** returns the
 header to the signed-in/signed-out states above.
 
+### Supabase setup (Phase 3)
+
+Order history lives in Supabase (Postgres). One-time setup:
+
+1. Create a project at [supabase.com](https://supabase.com) (free tier is fine).
+2. Open **SQL Editor → New query**, paste the entire contents of
+   [`supabase/schema.sql`](./supabase/schema.sql) and **Run**. Then do the
+   same with [`supabase/seed.sql`](./supabase/seed.sql) (the 6 products).
+3. Go to **Settings → API Keys** and copy:
+   - **Project URL** → `NEXT_PUBLIC_SUPABASE_URL`
+   - **Secret key** (`sb_secret_…`, the service-role replacement) →
+     `SUPABASE_SERVICE_ROLE_KEY`
+
+     ⚠️ The **publishable** key (`sb_publishable_…`) is the *anon*
+     equivalent — RLS applies to it and every table denies it. Server code
+     must use the **secret** key, which bypasses RLS (PRD FR3.2).
+4. Restart `npm run dev`.
+
+**What to test:**
+- Sign in with Google → open **Table Editor → users** → your row appears
+  (name/email/photo synced on sign-in, FR2.4).
+- Visit **/orders** while signed in → "No orders yet" state; after Phase 4
+  checkout your paid orders render here — order number, date, status,
+  itemised lines, total (FR3.4).
+- **Persistence (G2/G4):** orders are rows in Supabase — sign out, close the
+  browser completely, sign in again → history still there.
+- To preview the filled-in list before Phase 4, insert a demo order in the
+  SQL Editor using your `users.id` (see the comment at the bottom of
+  `supabase/seed.sql`).
+
 ### Scripts
 
 | Command | What it does |
@@ -98,14 +128,21 @@ app/
   signin/                 Branded Google sign-in page (Auth.js pages.signIn)
   cart/                   Cart (shell now, live cart in Phase 4)
   checkout/               Checkout (sign-in required; Paystack in Phase 4)
-  orders/                 Order history (sign-in required; Supabase in Phase 3)
+  orders/                 Order history from Supabase (sign-in required)
   api/auth/[...nextauth]/ Auth.js route handler (signin/signout/callback/session)
   not-found.tsx           Custom 404
   globals.css             Tailwind + NaijaBites brand tokens
-auth.ts                   Auth.js v5 config (Google provider, JWT sessions)
+auth.ts                   Auth.js v5 config (Google provider, JWT sessions,
+                          user sync on sign-in)
 components/               Header, Footer, ProductCard, QuantityStepper,
-                          AuthProvider, AuthMenu, SignInButton
+                          AuthProvider, AuthMenu, SignInButton, OrderCard
 lib/products.ts           Typed product catalog + ₦ price formatter
+lib/supabase.ts           Server-only service-role client (RLS bypass)
+lib/users.ts              UUIDv5 user ids + public.users sync (FR2.4)
+lib/orders.ts             Order history query + create_order RPC wrapper
+lib/database.types.ts     Hand-written Supabase table types
+supabase/schema.sql       Tables, RLS, create_order function (run in SQL Editor)
+supabase/seed.sql         The 6 products (run after schema.sql)
 types/next-auth.d.ts      Session type augmentation (session.user.id)
 public/products/          Product images (replace files, keep filenames)
 ```
