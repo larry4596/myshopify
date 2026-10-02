@@ -131,7 +131,11 @@ declare
   v_order_number text;
   v_total        integer := 0;
   v_lines        jsonb := '[]'::jsonb;
-  v_item         record;
+  -- MUST be jsonb, never `record`: a `FOR ... IN <query>` target declared as
+  -- `record` holds the whole ROW (here a 1-column record), so `v_item->>'slug'`
+  -- fails with "operator does not exist: record ->> unknown". Declared as jsonb
+  -- it holds the array element itself and ->> works.
+  v_item         jsonb;
   v_product      record;
   v_quantity     integer;
   v_attempts     integer := 0;
@@ -223,16 +227,19 @@ begin
   )
   returning id into v_order_id;
 
+  -- `line(value)` names the single jsonb column explicitly, so `line.value` is
+  -- unambiguously the element. `->>` only ever takes a jsonb operand — never a
+  -- row/record (which is exactly what broke the pricing loop above).
   insert into public.order_items (
     order_id, product_id, product_name, unit_price_kobo, quantity
   )
   select
     v_order_id,
-    (line->>'product_id')::uuid,
-    line->>'product_name',
-    (line->>'unit_price_kobo')::integer,
-    (line->>'quantity')::integer
-  from jsonb_array_elements(v_lines) as line;
+    (line.value->>'product_id')::uuid,
+    line.value->>'product_name',
+    (line.value->>'unit_price_kobo')::integer,
+    (line.value->>'quantity')::integer
+  from jsonb_array_elements(v_lines) as line(value);
 
   return v_order_id;
 end;
