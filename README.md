@@ -302,4 +302,5 @@ Variables → deploy.
 
 Private project — all rights reserved.
 #   m y s h o p i f y  
+ #   m y s h o p i f y  
  
