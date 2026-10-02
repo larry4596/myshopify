@@ -3,12 +3,16 @@ import { randomUUID } from "crypto";
 import { auth } from "@/auth";
 import { priceCart, isRawCartItem, type RawCartItem } from "@/lib/pricing";
 import { initializeTransaction, isPaystackConfigured } from "@/lib/paystack";
-import { getSiteUrl } from "@/lib/site-url";
+import { getPaystackCallbackUrl, isPaystackRedirectable, resolveSiteUrl } from "@/lib/site-url";
 
 /**
  * POST /api/paystack/initialize (PRD FR4.4)
  *
  * Creates the Paystack transaction for the signed-in customer's cart.
+ *
+ * `callback_url` is sent here (see lib/site-url.ts): Paystack's docs state it
+ * "overrides the callback url provided on the dashboard for this transaction",
+ * so the dashboard's Callback URL field can stay blank.
  *
  * SECURITY — nothing about money is trusted from the browser:
  *   • the cart arrives as `{slug, quantity}` only; `priceCart` re-reads every
@@ -129,11 +133,50 @@ export async function POST(request: Request) {
   const { cart } = priced;
   const reference = `NB-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
 
+  // ---------------------------------------------------------------------------
+  // The URL Paystack sends the customer's browser back to after paying (FR4.5).
+  // Built in one place, always absolute, never with a double slash.
+  // ---------------------------------------------------------------------------
+  const { source } = resolveSiteUrl(request);
+  const callbackUrl = getPaystackCallbackUrl(request);
+
+  // Paystack only redirects to a public HTTPS URL: it documents that http://
+  // and localhost callback URLs are not redirected to (the customer is left on
+  // checkout.paystack.com and no order can be created). Refuse to take money we
+  // cannot fulfil, and say exactly how to fix it.
+  if (!isPaystackRedirectable(callbackUrl)) {
+    console.error(
+      `[paystack] refusing to initialize: callback_url "${callbackUrl}" ` +
+        `(source: ${source}) is not a public HTTPS URL. Paystack will not ` +
+        `redirect a customer there, so the payment would succeed with no order. ` +
+        `Set NEXT_PUBLIC_SITE_URL to an https:// URL a browser can load — e.g. ` +
+        `a tunnel ("ngrok http 3000" -> https://<id>.ngrok.app) or the Vercel ` +
+        `domain — then restart the dev server.`,
+    );
+    return NextResponse.json(
+      {
+        message:
+          "Payments are paused: the store's public URL isn't set up for Paystack redirects yet.",
+        detail:
+          "Paystack only returns customers to an https:// URL (localhost is not supported). " +
+          "Set NEXT_PUBLIC_SITE_URL to an https URL (tunnel or deployed domain) and restart the dev server.",
+        callbackUrl,
+      },
+      { status: 503 },
+    );
+  }
+
+  // Proof in the server log of the exact URL Paystack is told to use.
+  console.info(
+    `[paystack] initialize ref=${reference} amount=${cart.totalKobo} kobo ` +
+      `callback_url=${callbackUrl} (from ${source})`,
+  );
+
   const initialized = await initializeTransaction({
     email: session.user.email,
     amountKobo: cart.totalKobo,
     reference,
-    callbackUrl: `${getSiteUrl()}/api/paystack/verify`,
+    callbackUrl,
     metadata: {
       // Read back from Paystack's verify response — never from the client.
       user_id: session.user.id,
@@ -155,5 +198,7 @@ export async function POST(request: Request) {
   return NextResponse.json({
     authorizationUrl: initialized.authorizationUrl,
     reference: initialized.reference,
+    /** Echoed for debugging: the exact URL Paystack will return the browser to. */
+    callbackUrl,
   });
 }

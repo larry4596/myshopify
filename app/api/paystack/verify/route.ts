@@ -33,7 +33,9 @@ function failureUrl(siteUrl: string, code: string): string {
 }
 
 export async function GET(request: Request) {
-  const siteUrl = getSiteUrl();
+  // Prefer the browser-facing origin of this callback request when the env var
+  // is missing or stale, so the customer is returned to the right host.
+  const siteUrl = getSiteUrl(request);
   const reference = new URL(request.url).searchParams.get("reference")
     ?? new URL(request.url).searchParams.get("trxref")
     ?? "";

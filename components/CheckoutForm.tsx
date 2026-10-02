@@ -145,10 +145,13 @@ export default function CheckoutForm({
       const payload = (await response.json().catch(() => null)) as {
         authorizationUrl?: string;
         message?: string;
+        detail?: string;
       } | null;
 
       if (!response.ok || !payload?.authorizationUrl) {
-        setSubmitError(payload?.message ?? GENERIC_ERROR);
+        // Prefer the actionable `detail` (e.g. the https/localhost requirement)
+        // over the short headline.
+        setSubmitError(payload?.detail ?? payload?.message ?? GENERIC_ERROR);
         setSubmitting(false);
         return;
       }

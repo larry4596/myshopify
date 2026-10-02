@@ -56,6 +56,32 @@ export async function initializeTransaction(
   const secretKey = process.env.PAYSTACK_SECRET_KEY?.trim();
   if (!secretKey) return { ok: false, message: "Paystack is not configured." };
 
+  // Paystack requires a FULLY QUALIFIED callback_url ("https://example.com/").
+  // A relative or malformed value is silently ignored by Paystack, which would
+  // leave the customer on checkout.paystack.com with no order created — so fail
+  // loudly here instead of sending something useless.
+  let callbackUrl: URL;
+  try {
+    callbackUrl = new URL(input.callbackUrl);
+  } catch {
+    console.error(
+      `[paystack] refusing to initialize: callback_url "${input.callbackUrl}" is not an absolute URL.`,
+    );
+    return {
+      ok: false,
+      message: "The store's callback URL is not configured correctly.",
+    };
+  }
+  if (!/^https?:$/.test(callbackUrl.protocol)) {
+    console.error(
+      `[paystack] refusing to initialize: callback_url "${input.callbackUrl}" must use http/https.`,
+    );
+    return {
+      ok: false,
+      message: "The store's callback URL is not configured correctly.",
+    };
+  }
+
   try {
     const response = await fetch(`${PAYSTACK_API}/transaction/initialize`, {
       method: "POST",
@@ -69,7 +95,9 @@ export async function initializeTransaction(
         email: input.email,
         amount: String(input.amountKobo),
         reference: input.reference,
-        callback_url: input.callbackUrl,
+        // Overrides the dashboard's "Callback URL" for this transaction, so the
+        // dashboard field can be left blank (paystack.com/docs/api/transaction).
+        callback_url: callbackUrl.toString(),
         currency: "NGN",
         metadata: input.metadata,
       }),
