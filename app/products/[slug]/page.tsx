@@ -6,8 +6,7 @@ import {
   getProductBySlug,
   products,
 } from "@/lib/products";
-import QuantityStepper from "@/components/QuantityStepper";
-
+import AddToCartPanel from "@/components/AddToCartPanel";
 type ProductPageProps = {
   /** Next.js 15: route params are async and must be awaited. */
   params: Promise<{ slug: string }>;
@@ -74,21 +73,11 @@ export default async function ProductPage({ params }: ProductPageProps) {
             {product.description}
           </p>
 
-          {/* Quantity */}
-          <div className="mt-6">
-            <p className="text-sm font-semibold text-ink/70">Quantity</p>
-            <div className="mt-2">
-              <QuantityStepper />
-            </div>
-          </div>
-
-          {/* Phase 4: wired to CartContext (localStorage) */}
-          <button
-            type="button"
-            className="mt-6 w-full rounded-full bg-brand px-6 py-3.5 font-semibold text-white transition-colors hover:bg-brand-dark sm:w-auto"
-          >
-            Add to cart
-          </button>
+          {/* Quantity + add to cart (Phase 4: wired to the localStorage cart) */}
+          <AddToCartPanel
+            slug={product.slug}
+            buttonClassName="mt-6 w-full rounded-full bg-brand px-6 py-3.5 font-semibold text-white transition-colors hover:bg-brand-dark sm:w-auto"
+          />
 
           <ul className="mt-8 space-y-3 border-t border-black/5 pt-6 text-sm text-ink/60">
             <li>✅ Prepared fresh on the day of delivery</li>

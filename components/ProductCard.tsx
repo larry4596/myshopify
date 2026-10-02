@@ -1,10 +1,12 @@
 import Image from "next/image";
 import Link from "next/link";
+import AddToCartButton from "@/components/AddToCartButton";
 import { formatNaira, type Product } from "@/lib/products";
 
 /**
  * Product card used in the home page menu grid.
- * "Add to cart" becomes functional in Phase 4 (CartContext).
+ * Phase 4: "Add to cart" adds 1 of this product to the localStorage cart
+ * (FR4.1 / FR4.2).
  */
 export default function ProductCard({ product }: { product: Product }) {
   return (
@@ -43,13 +45,11 @@ export default function ProductCard({ product }: { product: Product }) {
         </p>
 
         <div className="mt-4 flex items-center gap-2 pt-2">
-          {/* Phase 4: wired to CartContext (localStorage) */}
-          <button
-            type="button"
+          {/* Phase 4: wired to CartProvider (localStorage) */}
+          <AddToCartButton
+            slug={product.slug}
             className="flex-1 rounded-full bg-brand px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-dark"
-          >
-            Add to cart
-          </button>
+          />
           <Link
             href={`/products/${product.slug}`}
             className="rounded-full border border-brand/30 px-4 py-2.5 text-sm font-semibold text-brand transition-colors hover:bg-brand-light"

@@ -1,20 +1,32 @@
+"use client";
+
 import Link from "next/link";
+import type { ReactNode } from "react";
 import AuthMenu from "@/components/AuthMenu";
+import CartNavLink from "@/components/CartNavLink";
 
 /**
  * Site header.
  *
  * Phase 1: static navigation + placeholder sign-in button.
  * Phase 2: AuthMenu (client) shows real Google sign-in / avatar + sign out.
- * Phase 4: the Cart link gets a live item-count badge.
+ * Phase 4: "Cart" carries a live item-count badge (CartNavLink).
  */
 
-const navLinks = [
+const navLinks: { href: string; label: string }[] = [
   { href: "/", label: "Home" },
   { href: "/#menu", label: "Menu" },
-  { href: "/cart", label: "Cart" },
   { href: "/orders", label: "Orders" },
 ];
+
+/** The Cart entry needs live cart state, so it's rendered separately. */
+function NavItem({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <Link href={href} className="transition-colors hover:text-brand">
+      {children}
+    </Link>
+  );
+}
 
 export default function Header() {
   return (
@@ -34,14 +46,11 @@ export default function Header() {
           aria-label="Primary"
         >
           {navLinks.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              className="transition-colors hover:text-brand"
-            >
+            <NavItem key={link.href} href={link.href}>
               {link.label}
-            </Link>
+            </NavItem>
           ))}
+          <CartNavLink />
         </nav>
 
         {/* Actions — real auth state (Phase 2) */}
@@ -56,14 +65,11 @@ export default function Header() {
         aria-label="Mobile"
       >
         {navLinks.map((link) => (
-          <Link
-            key={link.href}
-            href={link.href}
-            className="transition-colors hover:text-brand"
-          >
+          <NavItem key={link.href} href={link.href}>
             {link.label}
-          </Link>
+          </NavItem>
         ))}
+        <CartNavLink />
       </nav>
     </header>
   );
