@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600" role="img" aria-label="Spring Rolls (6pcs)">
+  <rect width="800" height="600" fill="#F9F5EB"/>
+  <circle cx="400" cy="250" r="165" fill="#EAF3EE" stroke="#0F6B3C" stroke-width="3"/>
+  <text x="400" y="310" text-anchor="middle" font-size="160" font-family="Segoe UI Emoji, Apple Color Emoji, Noto Color Emoji, sans-serif">🌯</text>
+  <text x="400" y="445" text-anchor="middle" font-size="38" font-weight="700" fill="#0F6B3C" font-family="Segoe UI, Arial, sans-serif">Spring Rolls (6pcs)</text>
+  <rect x="330" y="465" width="140" height="7" rx="3.5" fill="#E8B923"/>
+  <text x="400" y="550" text-anchor="middle" font-size="20" fill="#1A1A1A" fill-opacity="0.55" font-family="Segoe UI, Arial, sans-serif">NaijaBites • Fresh. Homemade. Delivered.</text>
+</svg>

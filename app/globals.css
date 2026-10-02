@@ -1,26 +1,32 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ---------------------------------------------------------------------------
+ * NaijaBites brand theme (Tailwind CSS v4)
+ *
+ * These tokens generate utilities automatically:
+ *   --color-brand       ->  bg-brand, text-brand, border-brand
+ *   --color-brand-dark  ->  hover:bg-brand-dark
+ *   --color-cream       ->  bg-cream
+ *   ...and opacity modifiers like bg-cream/95 work too.
+ * ------------------------------------------------------------------------- */
+@theme {
+  --color-brand: #0f6b3c; /* primary — deep green   */
+  --color-brand-dark: #0b5230; /* hover / pressed green  */
+  --color-brand-light: #eaf3ee; /* soft green tint        */
+  --color-gold: #e8b923; /* secondary — warm gold   */
+  --color-gold-dark: #c99b12; /* gold hover              */
+  --color-cream: #f9f5eb; /* page background         */
+  --color-ink: #1a1a1a; /* body text               */
 }
 
+/* Fonts are loaded by next/font (Geist) and exposed as CSS variables. */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* Smooth scrolling for in-page anchors (e.g. the "Menu" nav link -> #menu). */
+html {
+  scroll-behavior: smooth;
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
-}

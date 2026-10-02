@@ -1,103 +1,124 @@
-import Image from "next/image";
+import Link from "next/link";
+import { products } from "@/lib/products";
+import ProductCard from "@/components/ProductCard";
 
+/**
+ * Home page: brand hero + the product menu grid.
+ * All products come from lib/products.ts (swapped to Supabase in Phase 3).
+ */
 export default function Home() {
   return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
-
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+    <>
+      {/* Hero */}
+      <section className="mx-auto max-w-6xl px-4 pt-8 sm:px-6">
+        <div className="rounded-3xl bg-brand px-6 py-12 text-center sm:px-12 sm:py-16">
+          <p className="text-sm font-semibold uppercase tracking-widest text-gold">
+            Fresh. Homemade. Delivered.
+          </p>
+          <h1 className="mx-auto mt-4 max-w-2xl text-3xl font-extrabold tracking-tight text-white sm:text-5xl">
+            Authentic Nigerian snacks, made at home
+          </h1>
+          <p className="mx-auto mt-4 max-w-xl text-sm leading-relaxed text-cream/80 sm:text-base">
+            Puff-puff, chin-chin, meat pies, small chops and more — prepared
+            fresh every day and delivered across Lagos.
+          </p>
+          <div className="mt-8">
+            <a
+              href="#menu"
+              className="inline-block rounded-full bg-gold px-6 py-3 text-sm font-bold text-ink transition-colors hover:bg-gold-dark"
+            >
+              Browse our menu
+            </a>
+          </div>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+      </section>
+
+      {/* Trust strip */}
+      <section className="mx-auto mt-8 grid max-w-6xl gap-4 px-4 sm:grid-cols-3 sm:px-6">
+        <div className="rounded-2xl bg-white p-5 text-center ring-1 ring-black/5">
+          <p className="text-2xl" aria-hidden>
+            🌱
+          </p>
+          <p className="mt-2 font-semibold text-brand">Made fresh daily</p>
+          <p className="mt-1 text-sm text-ink/60">
+            Nothing frozen, nothing stored.
+          </p>
+        </div>
+        <div className="rounded-2xl bg-white p-5 text-center ring-1 ring-black/5">
+          <p className="text-2xl" aria-hidden>
+            🛵
+          </p>
+          <p className="mt-2 font-semibold text-brand">Fast Lagos delivery</p>
+          <p className="mt-1 text-sm text-ink/60">
+            Hot & fresh to your doorstep.
+          </p>
+        </div>
+        <div className="rounded-2xl bg-white p-5 text-center ring-1 ring-black/5">
+          <p className="text-2xl" aria-hidden>
+            🍲
+          </p>
+          <p className="mt-2 font-semibold text-brand">100% homemade</p>
+          <p className="mt-1 text-sm text-ink/60">
+            Real recipes, real ingredients.
+          </p>
+        </div>
+      </section>
+
+      {/* Menu */}
+      <section id="menu" className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
+        <h2 className="text-2xl font-extrabold tracking-tight text-brand sm:text-3xl">
+          Our Menu
+        </h2>
+        <p className="mt-1 text-sm text-ink/60">
+          Six favourites, packed with home-style flavour.
+        </p>
+
+        <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {products.map((product) => (
+            <ProductCard key={product.id} product={product} />
+          ))}
+        </div>
+      </section>
+
+      {/* How it works */}
+      <section className="mx-auto max-w-6xl px-4 pb-4 sm:px-6">
+        <div className="rounded-2xl bg-white p-6 ring-1 ring-black/5 sm:p-8">
+          <h2 className="text-xl font-extrabold text-brand">How it works</h2>
+          <ol className="mt-4 grid gap-4 text-sm sm:grid-cols-3">
+            <li className="rounded-xl bg-cream p-4">
+              <span className="font-bold text-gold-dark">1.</span>{" "}
+              <span className="font-semibold">Pick your snacks</span>
+              <p className="mt-1 text-ink/60">
+                Add anything from the menu to your cart.
+              </p>
+            </li>
+            <li className="rounded-xl bg-cream p-4">
+              <span className="font-bold text-gold-dark">2.</span>{" "}
+              <span className="font-semibold">Check out securely</span>
+              <p className="mt-1 text-ink/60">
+                Sign in with Google and pay with Paystack.
+              </p>
+            </li>
+            <li className="rounded-xl bg-cream p-4">
+              <span className="font-bold text-gold-dark">3.</span>{" "}
+              <span className="font-semibold">Get it delivered</span>
+              <p className="mt-1 text-ink/60">
+                Fresh to your door — confirmation in your inbox.
+              </p>
+            </li>
+          </ol>
+          <p className="mt-6 text-sm text-ink/60">
+            Questions?{" "}
+            <Link
+              href="/orders"
+              className="font-medium text-brand hover:underline"
+            >
+              Track your orders here
+            </Link>
+            .
+          </p>
+        </div>
+      </section>
+    </>
   );
 }

@@ -1,36 +1,112 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🍢 NaijaBites
 
-## Getting Started
+**Fresh. Homemade. Delivered.**
 
-First, run the development server:
+A fully functional e-commerce store for homemade Nigerian snacks and small
+chops — puff-puff, chin-chin, meat pies, spring rolls, suya wings and assorted
+boxes — delivered fresh across Lagos.
+
+> Built for **HNG 15 · Lesson 2**. This is **not a static site**: the project's
+> core is real integrations — Google sign-in, a persistent Supabase database,
+> durable order history, Paystack test-mode checkout and real Mailgun
+> confirmation emails.
+
+See [`PRD.md`](./PRD.md) for the full Product Requirements Document.
+
+## Build status (phased)
+
+| Phase | Deliverable | Status |
+|------:|-------------|--------|
+| 1 | Project setup + PRD + basic shop UI | ✅ Done |
+| 2 | Authentication — Google OAuth (Auth.js) | ⏳ Next |
+| 3 | Supabase schema + order persistence | ⏳ |
+| 4 | Cart + Checkout + Paystack Test Mode | ⏳ |
+| 5 | Mailgun confirmation email | ⏳ |
+| 6 | Vercel deployment + environment variables | ⏳ |
+| 7 | End-to-end testing checklist | ⏳ |
+
+## Tech stack
+
+- **Next.js 15.5** (App Router) + **TypeScript** + **React 19**
+- **Tailwind CSS v4** — brand tokens live in `app/globals.css`
+- **Auth.js v5 (NextAuth)** with Google provider — *Phase 2*
+- **Supabase** (Postgres) — *Phase 3*
+- **Paystack** Test Mode — *Phase 4*
+- **Mailgun** — *Phase 5*
+- **Vercel** hosting — *Phase 6*
+
+## Running locally
+
+### Prerequisites
+- Node.js 20+ (this repo was built on Node 24)
+- npm 10+
+
+### Steps
 
 ```bash
+# 1. Install dependencies
+npm install
+
+# 2. Create your local env file from the template
+#    (macOS/Linux) cp .env.example .env.local
+#    (Windows)     copy .env.example .env.local
+#    Phase 1 needs no keys yet — they are filled in during later phases.
+
+# 3. Start the dev server
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000 — you should see the shop with all 6 products.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Scripts
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Command | What it does |
+|---------|--------------|
+| `npm run dev` | Dev server with Turbopack (http://localhost:3000) |
+| `npm run build` | Production build (also lints + type-checks) |
+| `npm run start` | Serve the production build |
+| `npm run lint` | ESLint |
 
-## Learn More
+## Project structure
 
-To learn more about Next.js, take a look at the following resources:
+```
+app/
+  layout.tsx              Root layout (Header + Footer, metadata, fonts)
+  page.tsx                Home: hero + menu grid
+  products/[slug]/        Product detail pages (pre-rendered)
+  cart/                   Cart (shell now, live cart in Phase 4)
+  checkout/               Checkout (shell now, Paystack in Phase 4)
+  orders/                 Order history (shell now, Supabase in Phase 3)
+  not-found.tsx           Custom 404
+  globals.css             Tailwind + NaijaBites brand tokens
+components/               Header, Footer, ProductCard, QuantityStepper
+lib/products.ts           Typed product catalog + ₦ price formatter
+public/products/          Product images (replace files, keep filenames)
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Environment variables
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+**All secrets live in `.env.local` (local) and Vercel environment variables
+(production). Never in code, never in Git.** `.env.local` is git-ignored;
+`.env.example` documents every variable and is safe to commit.
 
-## Deploy on Vercel
+| Variable | Exposure | Phase |
+|----------|----------|------:|
+| `NEXT_PUBLIC_SUPABASE_URL` | public | 3 |
+| `SUPABASE_SERVICE_ROLE_KEY` | **server only** | 3 |
+| `AUTH_SECRET` | server only | 2 |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | server only | 2 |
+| `NEXT_PUBLIC_SITE_URL` | public | 4 |
+| `PAYSTACK_SECRET_KEY` | **server only** | 4 |
+| `NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY` | public | 4 |
+| `MAILGUN_API_KEY` / `MAILGUN_DOMAIN` / `MAILGUN_FROM` | **server only** | 5 |
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Deployment
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Planned for **Vercel** in Phase 6: push this repo to GitHub → import in Vercel →
+add every variable from `.env.example` under Project → Settings → Environment
+Variables → deploy.
+
+## License
+
+Private project — all rights reserved.
