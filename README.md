@@ -18,8 +18,8 @@ See [`PRD.md`](./PRD.md) for the full Product Requirements Document.
 | Phase | Deliverable | Status |
 |------:|-------------|--------|
 | 1 | Project setup + PRD + basic shop UI | ✅ Done |
-| 2 | Authentication — Google OAuth (Auth.js) | ⏳ Next |
-| 3 | Supabase schema + order persistence | ⏳ |
+| 2 | Authentication — Google OAuth (Auth.js) | ✅ Done |
+| 3 | Supabase schema + order persistence | ⏳ Next |
 | 4 | Cart + Checkout + Paystack Test Mode | ⏳ |
 | 5 | Mailgun confirmation email | ⏳ |
 | 6 | Vercel deployment + environment variables | ⏳ |
@@ -29,7 +29,7 @@ See [`PRD.md`](./PRD.md) for the full Product Requirements Document.
 
 - **Next.js 15.5** (App Router) + **TypeScript** + **React 19**
 - **Tailwind CSS v4** — brand tokens live in `app/globals.css`
-- **Auth.js v5 (NextAuth)** with Google provider — *Phase 2*
+- **Auth.js v5 (NextAuth)** with Google provider — JWT sessions ✅ *Phase 2*
 - **Supabase** (Postgres) — *Phase 3*
 - **Paystack** Test Mode — *Phase 4*
 - **Mailgun** — *Phase 5*
@@ -50,13 +50,34 @@ npm install
 # 2. Create your local env file from the template
 #    (macOS/Linux) cp .env.example .env.local
 #    (Windows)     copy .env.example .env.local
-#    Phase 1 needs no keys yet — they are filled in during later phases.
+#    Then set AUTH_SECRET (Phase 2 needs it):
+#      openssl rand -base64 32
+#    and fill in GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET (see below).
+#    Later phases add the Supabase, Paystack and Mailgun keys.
 
 # 3. Start the dev server
 npm run dev
 ```
 
 Open http://localhost:3000 — you should see the shop with all 6 products.
+
+### Google OAuth setup (Phase 2)
+
+Sign-in uses a real Google OAuth client:
+
+1. Go to [Google Cloud Console → Credentials](https://console.cloud.google.com/apis/credentials)
+   (create a project if you don't have one).
+2. **Configure the OAuth consent screen** (External is fine) — add your Google
+   account email as a test user while the app is in testing mode.
+3. **Create credentials → OAuth client ID → Web application** with:
+   - *Authorized JavaScript origins*: `http://localhost:3000`
+   - *Authorized redirect URIs*: `http://localhost:3000/api/auth/callback/google`
+4. Copy the client ID and secret into `.env.local`, then restart `npm run dev`.
+
+**What to test:** click **Sign in with Google** in the header → Google
+consent → back on the site your avatar + name appear; `/checkout` and
+`/orders` redirect to `/signin` when signed out; **Sign out** returns the
+header to the signed-in/signed-out states above.
 
 ### Scripts
 
@@ -71,16 +92,21 @@ Open http://localhost:3000 — you should see the shop with all 6 products.
 
 ```
 app/
-  layout.tsx              Root layout (Header + Footer, metadata, fonts)
+  layout.tsx              Root layout (AuthProvider + Header + Footer, metadata, fonts)
   page.tsx                Home: hero + menu grid
   products/[slug]/        Product detail pages (pre-rendered)
+  signin/                 Branded Google sign-in page (Auth.js pages.signIn)
   cart/                   Cart (shell now, live cart in Phase 4)
-  checkout/               Checkout (shell now, Paystack in Phase 4)
-  orders/                 Order history (shell now, Supabase in Phase 3)
+  checkout/               Checkout (sign-in required; Paystack in Phase 4)
+  orders/                 Order history (sign-in required; Supabase in Phase 3)
+  api/auth/[...nextauth]/ Auth.js route handler (signin/signout/callback/session)
   not-found.tsx           Custom 404
   globals.css             Tailwind + NaijaBites brand tokens
-components/               Header, Footer, ProductCard, QuantityStepper
+auth.ts                   Auth.js v5 config (Google provider, JWT sessions)
+components/               Header, Footer, ProductCard, QuantityStepper,
+                          AuthProvider, AuthMenu, SignInButton
 lib/products.ts           Typed product catalog + ₦ price formatter
+types/next-auth.d.ts      Session type augmentation (session.user.id)
 public/products/          Product images (replace files, keep filenames)
 ```
 
