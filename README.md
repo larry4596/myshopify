@@ -21,8 +21,8 @@ See [`PRD.md`](./PRD.md) for the full Product Requirements Document.
 | 2 | Authentication — Google OAuth (Auth.js) | ✅ Done |
 | 3 | Supabase schema + order persistence | ✅ Done |
 | 4 | Cart + Checkout + Paystack Test Mode | ✅ Done |
-| 5 | Mailgun confirmation email | ⏳ Next |
-| 6 | Vercel deployment + environment variables | ⏳ |
+| 5 | Mailgun confirmation email | ✅ Done |
+| 6 | Vercel deployment + environment variables | ✅ Done |
 | 7 | End-to-end testing checklist | ⏳ |
 
 ## Tech stack
@@ -33,7 +33,7 @@ See [`PRD.md`](./PRD.md) for the full Product Requirements Document.
 - **Supabase** (Postgres) — RLS-enabled tables, service-role access only ✅ *Phase 3*
 - **Cart** — React Context + `localStorage` (survives refresh, works signed-out) ✅ *Phase 4*
 - **Paystack** Test Mode — server-priced, verified server-side before fulfillment ✅ *Phase 4*
-- **Mailgun** — *Phase 5*
+- **Mailgun** — server-side HTTP API via `fetch` (no SDK), branded confirmation email ✅ *Phase 5*
 - **Vercel** hosting — *Phase 6*
 
 ## Running locally
@@ -160,21 +160,53 @@ future inline-JS integration.
 blank.** Paystack's Initialize Transaction endpoint takes a `callback_url` that
 *"overrides the callback url provided on the dashboard for this transaction"*,
 so **Paystack dashboard → Settings → Callback URL can stay empty**. The value is
-`NEXT_PUBLIC_SITE_URL` + `/api/paystack/verify`, built in one place in
+`<origin>` + `/api/paystack/verify`, built in one place in
 [`lib/site-url.ts`](./lib/site-url.ts) (always absolute, never a double slash),
 echoed in the initialize response for debugging, and logged server-side on every
-attempt:
+attempt.
+
+**Which origin is used.** Paystack returns the customer to that URL as a fresh
+cross-site navigation, so it must be the host the customer's session cookie
+lives on (on Vercel the production alias, the `*.vercel.app` deployment URL,
+previews and any custom domain are all *different* hosts). `resolveSiteUrl`
+therefore tries, in order:
+
+1. **the request's own origin** (proxy-aware — on Vercel this is always the
+   domain the customer is actually browsing on)
+2. `NEXT_PUBLIC_SITE_URL` — keep it set to your `https://` production URL; it is
+   also the source used when there is no request at all
+3. `VERCEL_URL` (set automatically by Vercel)
+4. `http://localhost:3000`
 
 ```text
-[paystack] initialize ref=NB-m9k2x1-a1b2c3d4 amount=950000 kobo callback_url=https://abc123.ngrok.app/api/paystack/verify (from NEXT_PUBLIC_SITE_URL)
+[paystack] initialize ref=NB-m9k2x1-a1b2c3d4 amount=950000 kobo callback_url=https://abc123.ngrok.app/api/paystack/verify (from request)
 ```
 
 Once the payment is done, Paystack returns the browser to
 `https://<your-domain>/api/paystack/verify`, which calls Paystack's verify API,
 compares the amount against the server-priced cart, and only then creates the
 order. (A webhook is the more robust option — Paystack's own docs call callbacks
-"not the only way of returning value" — and is a possible Phase 6 hardening:
-order fulfilment would no longer depend on the browser coming back at all.)
+"not the only way of returning value" — and remains a possible hardening: order
+fulfilment would no longer depend on the browser coming back at all.)
+
+**Callback fallbacks** — a customer who has paid can never lose their order or
+their confirmation:
+
+- **Replayed / refreshed callback** — if the reference already produced an
+  order, the route redirects straight to the receipt *with that order's id*, so
+  re-opening the callback renders the same confirmation again and can never
+  duplicate the order (`orders.paystack_reference` is unique).
+- **Callback without a session** — if the session cookie didn't survive the
+  round trip (different host, another tab, hand-opened link), the payer recorded
+  in Paystack's `metadata` at initialize time identifies who the payment belongs
+  to — never the query string — and the order is still created, with a warning
+  in the server log naming the host mismatch.
+- **Receipt not readable yet** — `/checkout/success` never shows a bare 404 for
+  a paid order: it resolves the receipt by `orderId` *or* by the Paystack
+  `ref`, and if the row still can't be read it renders a *"We're confirming your
+  payment"* card with the reference and a **Check my payment again** button that
+  re-runs the verify route. A signed-out visitor keeps the full receipt URL
+  through `/signin`.
 
 **Paystack test card**
 
@@ -190,10 +222,12 @@ Other test numbers (declined / insufficient funds) are listed in Paystack's
 [test payments docs](https://paystack.com/docs/payments/test-payments/).
 
 **What to test (G9):**
-- *Prerequisite:* in production `NEXT_PUBLIC_SITE_URL` must be an `https://`
-  URL (the checkout refuses to start a payment otherwise). Locally, either use
-  an HTTPS tunnel for normal redirects, or stay on `http://localhost:3000` and
-  finish each payment by opening the verify link the checkout page shows.
+- *Prerequisite:* in production the callback origin must be an `https://` URL —
+  on Vercel that is taken from the request itself and is always https; a
+  non-HTTPS origin with no env fallback refuses to start a payment (503).
+  Locally, either use an HTTPS tunnel for normal redirects, or stay on
+  `http://localhost:3000` and finish each payment by opening the verify link the
+  checkout page shows.
 - Add a few items → **Cart** shows them with a live header badge, and they
   survive a page refresh.
 - **Proceed to checkout** while signed out → redirected to `/signin`, then back
@@ -206,11 +240,51 @@ Other test numbers (declined / insufficient funds) are listed in Paystack's
   closing the browser and signing in again (G2/G4).
 - Paystack **Dashboard → Transactions** shows the same reference, marked
   *success* (test mode).
-- **Idempotency:** refresh the success page / re-open the callback URL → no
-  duplicate order is created (`orders.paystack_reference` is unique).
+- **Idempotency:** refresh the success page / re-open the callback URL → the
+  same receipt renders again and no duplicate order is created
+  (`orders.paystack_reference` is unique).
 - **Failure path:** on Paystack, choose *Cancel* or use a declined test card →
   you land back on `/checkout` with a readable message and **no order row** is
   created (FR4.7).
+
+### Mailgun setup (Phase 5)
+
+After a verified payment, `/api/paystack/verify` sends the buyer a branded
+confirmation email (order number, itemised lines, total, delivery details)
+through Mailgun's HTTP API — plain `fetch`, no SDK (`lib/mailgun.ts`).
+
+The send is **best-effort (FR5.4)**: the order row is already saved, so a
+Mailgun outage only logs `[mailgun] confirmation FAILED …` in the server log —
+the customer still lands on the success page. Sending is skipped with a clear
+log line when the three variables below are missing or still placeholders.
+
+1. Create an account at [mailgun.com](https://www.mailgun.com) (the free trial
+   includes 5,000 emails/month for 30 days).
+2. **Sending → Domain List → Add New Domain**: use your own domain (e.g.
+   `mg.yourdomain.com`) and add the DNS records Mailgun shows (SPF/DKIM) so
+   mail is signed. On a sandbox domain (`*.mailgun.org`) emails only reach
+   **Authorized Recipients** you add under **Sending → Authorized Recipients**
+   — fine for testing, but real buyers must receive it too, so prefer a
+   verified custom domain for submission.
+3. **Sending → API Keys → Create API Key** → `MAILGUN_API_KEY`
+   *(server-only — never prefix it with `NEXT_PUBLIC_`)*.
+4. The domain you'll send through → `MAILGUN_DOMAIN` (e.g. `mg.yourdomain.com`
+   — just the domain, no `https://`).
+5. Branded sender on that domain → `MAILGUN_FROM`, e.g.
+   `NaijaBites <orders@mg.yourdomain.com>`.
+6. Restart `npm run dev`.
+
+**What to test (G5):**
+- Complete a test-mode checkout (Phase 4) → within a few seconds the buyer's
+  Google inbox shows an email from your `MAILGUN_FROM` address with subject
+  `Order confirmed — NB-… · NaijaBites`.
+- The email matches the receipt: same order number, same lines and prices,
+  same total and delivery address, green/gold/cream branding and a working
+  **View your receipt** button.
+- Mailgun **Logs** shows the message with status `delivered` (or `accepted`
+  while the trial warms up; sandbox sends go to the authorized recipient).
+- Temporarily blank `MAILGUN_API_KEY` → checkout still succeeds and the server
+  log shows the skip warning (FR5.4).
 
 ### Scripts
 
@@ -250,6 +324,8 @@ lib/users.ts              UUIDv5 user ids + public.users sync (FR2.4)
 lib/orders.ts             Order history query + idempotent create_order wrapper
 lib/pricing.ts            Server-side cart pricing (never trusts the browser)
 lib/paystack.ts           Server-only Paystack initialize/verify client
+lib/mailgun.ts            Server-only Mailgun HTTP client (FR5.1)
+lib/order-email.ts        Branded confirmation email HTML + text (FR5.3)
 lib/site-url.ts           The origin Paystack should call back to
 lib/database.types.ts     Hand-written Supabase table types
 supabase/schema.sql       Tables, RLS, create_order function (run in SQL Editor)
@@ -294,9 +370,19 @@ The browser is never trusted with money (PRD FR4.7):
 
 ## Deployment
 
-Planned for **Vercel** in Phase 6: push this repo to GitHub → import in Vercel →
-add every variable from `.env.example` under Project → Settings → Environment
-Variables → deploy.
+Live on **Vercel** (Phase 6): the repo is pushed to GitHub and imported into
+Vercel, with every variable from `.env.example` under Project → Settings →
+Environment Variables (Production *and* Preview) before each deploy.
+
+- Set `NEXT_PUBLIC_SITE_URL` to the production `https://` URL. The callback
+  prefers the request's own origin, so payments still work if this is missing —
+  but keeping it correct keeps the log and the fallbacks unambiguous.
+- After changing any environment variable, hit **Redeploy** — values are read
+  at build/request time and `NEXT_PUBLIC_*` ones are baked in at build time.
+- Paystack dashboard → Settings → Callback URL stays **blank** (every
+  transaction carries its own `callback_url`).
+- Checkout only refuses a payment (503) when the callback URL that would be
+  handed to Paystack is not a public HTTPS URL — on Vercel that never happens.
 
 ## License
 

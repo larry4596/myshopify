@@ -223,3 +223,67 @@ export async function createOrder(
 
   return { status: "ok", orderId: data };
 }
+
+export type OrderEmailRow = {
+  orderNumber: string;
+  totalKobo: number;
+  createdAt: string;
+  customerName: string;
+  customerPhone: string;
+  address: string;
+  notes: string | null;
+  items: { productName: string; unitPriceKobo: number; quantity: number }[];
+};
+
+/**
+ * Read a freshly-created order back for its confirmation email (FR5.3).
+ *
+ * Returns the SAVED receipt — order number and the price snapshots written by
+ * `create_order` — so the email always matches what the database (and the
+ * success page) shows, never what the request happened to carry.
+ */
+export async function getOrderForEmail(
+  orderId: string,
+): Promise<OrderEmailRow | null> {
+  const db = getSupabaseAdmin();
+  if (!db) return null;
+
+  const { data: order, error } = await db
+    .from("orders")
+    .select(
+      "id, order_number, total_kobo, created_at, customer_name, customer_phone, address, notes",
+    )
+    .eq("id", orderId)
+    .maybeSingle();
+
+  if (error || !order) {
+    if (error) console.error("[orders] email receipt lookup failed:", error.message);
+    return null;
+  }
+
+  const { data: items, error: itemsError } = await db
+    .from("order_items")
+    .select("product_name, unit_price_kobo, quantity")
+    .eq("order_id", order.id);
+
+  if (itemsError) {
+    console.error("[orders] email items lookup failed:", itemsError.message);
+    return null;
+  }
+
+  return {
+    orderNumber: order.order_number,
+    totalKobo: order.total_kobo,
+    createdAt: order.created_at,
+    customerName: order.customer_name,
+    customerPhone: order.customer_phone,
+    address: order.address,
+    notes: order.notes,
+    items: (items ?? []).map((item) => ({
+      productName: item.product_name,
+      unitPriceKobo: item.unit_price_kobo,
+      quantity: item.quantity,
+    })),
+  };
+}
+
