@@ -40,14 +40,16 @@ export function joinUrl(base: string, path: string): string {
 
 /** The origin the browser used for this request (proxy-aware). */
 function originFromRequest(request: Request): string | null {
-  const forwardedHost = request.headers.get("x-forwarded-host");
-  const host = forwardedHost ?? request.headers.get("host");
+  // Proxy chains may list several values ("a.example, b.example") — the FIRST
+  // is the one the client used, and the only one that keeps the URL valid.
+  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const host = forwardedHost || request.headers.get("host")?.trim();
   if (host) {
     const isLocal =
       host.startsWith("localhost") || host.startsWith("127.0.0.1") ||
       host.startsWith("[::1]");
-    const proto =
-      request.headers.get("x-forwarded-proto") ?? (isLocal ? "http" : "https");
+    const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+    const proto = forwardedProto || (isLocal ? "http" : "https");
     return `${proto}://${host}`;
   }
   try {
@@ -59,12 +61,26 @@ function originFromRequest(request: Request): string | null {
 }
 
 /**
- * Resolve the public origin, in order of precedence:
- *   1. NEXT_PUBLIC_SITE_URL — the documented switch (PRD §9); set it to
- *      `http://localhost:3000` locally or the deployment URL in production
- *   2. VERCEL_URL           — set automatically by Vercel (previews included)
- *   3. the request's origin — what the customer's browser actually used, which
- *      is right even when the env var is stale or missing
+ * Resolve the public origin Paystack should send the customer back to.
+ *
+ * WHY THE REQUEST'S OWN ORIGIN WINS: Paystack returns the customer's browser
+ * to the callback URL as a fresh, cross-site navigation — the session cookie
+ * only travels with it if it was set for THAT exact host. On Vercel the
+ * production alias, the deployment URL (`VERCEL_URL`), preview URLs and any
+ * custom domain are all different hosts with different cookies, so an origin
+ * taken from an env var can send a signed-in customer back to a host where
+ * they are signed out (payment verified, but "session_mismatch" and no order).
+ * The host the customer is actually browsing on can never have that problem.
+ *
+ * Order of precedence:
+ *   1. the request's origin — what the customer's browser actually used
+ *      (proxy-aware: x-forwarded-proto/host, so Vercel's https is kept).
+ *      Skipped in production when it is not an https URL (a localhost origin
+ *      can never be a Paystack callback), where we fall through to:
+ *   2. NEXT_PUBLIC_SITE_URL — the documented switch (PRD §9); set it to
+ *      `http://localhost:3000` locally or the deployment URL in production.
+ *      Also the source used when a caller has no request at all.
+ *   3. VERCEL_URL           — set automatically by Vercel (previews included)
  *   4. http://localhost:3000
  *
  * The chosen source is returned too, so callers can log WHY they built the URL
@@ -74,6 +90,23 @@ export function resolveSiteUrl(request?: Request): {
   url: string;
   source: SiteUrlSource;
 } {
+  if (request) {
+    const origin = originFromRequest(request);
+    if (origin) {
+      const isProduction = process.env.NODE_ENV === "production";
+      if (!isProduction || origin.startsWith("https://")) {
+        return { url: origin.replace(/\/+$/, ""), source: "request" };
+      }
+      // Production over plain http (misconfigured proxy): never hand that to
+      // Paystack — it refuses to redirect there and the payment would complete
+      // with no order. Fall back to the configured URL instead.
+      console.warn(
+        `[site-url] ignoring request origin "${origin}" in production (not https) — ` +
+          `using NEXT_PUBLIC_SITE_URL / VERCEL_URL for the Paystack callback instead.`,
+      );
+    }
+  }
+
   const configured = process.env.NEXT_PUBLIC_SITE_URL?.trim();
   if (configured && /^https?:\/\//i.test(configured)) {
     return { url: configured.replace(/\/+$/, ""), source: "NEXT_PUBLIC_SITE_URL" };
@@ -83,11 +116,6 @@ export function resolveSiteUrl(request?: Request): {
   if (vercel) {
     const withScheme = /^https?:\/\//i.test(vercel) ? vercel : `https://${vercel}`;
     return { url: withScheme.replace(/\/+$/, ""), source: "VERCEL_URL" };
-  }
-
-  if (request) {
-    const origin = originFromRequest(request);
-    if (origin) return { url: origin.replace(/\/+$/, ""), source: "request" };
   }
 
   return { url: LOCAL_DEFAULT, source: "default" };
