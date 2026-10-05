@@ -6,8 +6,10 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
+import { useSession } from "next-auth/react";
 import { getProductBySlug } from "@/lib/products";
 
 /**
@@ -21,6 +23,10 @@ import { getProductBySlug } from "@/lib/products";
  * - Persisted in localStorage so it survives refreshes and works signed-out
  *   (FR4.2). Nothing about ORDERS lives here — those are server-side only
  *   (FR3.3).
+ * - Lesson 3 P3: when a session exists the cart ALSO mirrors to the server
+ *   (`PUT /api/cart/items`, debounced 400 ms, fire-and-forget with a 3 s
+ *   timeout per PRD-LESSON3 R6). The localStorage path stays exactly as it
+ *   is underneath — deleting the mirror restores Lesson 2 unchanged.
  * - localStorage is read inside an effect, never during render, so the server
  *   HTML and the first client render always agree (no hydration mismatch).
  */
@@ -88,9 +94,76 @@ function writeStoredCart(lines: CartLine[]): void {
   }
 }
 
+/** Fire-and-forget mirror PUT (PRD-LESSON3 R6: debounced by the caller, 3 s timeout). */
+const MIRROR_DEBOUNCE_MS = 400;
+
+async function mirrorLines(lines: CartLine[]): Promise<void> {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3000);
+    try {
+      await fetch("/api/cart/items", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ lines }),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch {
+    // A failed mirror must never break shopping — the localStorage cart is
+    // the source of truth on this device; P4 adds retry/queueing.
+  }
+}
+
+/** Validate server lines: shape + 1..20 integers + dedupe. */
+function sanitizeServerLines(value: unknown): CartLine[] {
+  if (!Array.isArray(value)) return [];
+  const lines: CartLine[] = [];
+  const seen = new Set<string>();
+  for (const entry of value) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const { slug, quantity } = entry as { slug?: unknown; quantity?: unknown };
+    if (typeof slug !== "string" || slug.length === 0 || seen.has(slug)) continue;
+    if (!Number.isInteger(quantity)) continue;
+    seen.add(slug);
+    lines.push({ slug, quantity: clampQuantity(quantity as number) });
+  }
+  return lines;
+}
+
+/**
+ * Client-side fold of a guest cart into the server cart (PRD-LESSON3 §7.3).
+ *
+ * Union of lines, per-line quantity is the MAX of both sides. Max (not sum)
+ * keeps sign-out/sign-in cycles idempotent: re-hydrating an already-synced
+ * cart changes nothing, so quantities can never double. Server order first,
+ * new guest slugs appended.
+ */
+function foldLines(server: CartLine[], guest: CartLine[]): CartLine[] {
+  const quantities = new Map<string, number>();
+  for (const line of server) quantities.set(line.slug, line.quantity);
+  for (const line of guest) {
+    quantities.set(line.slug, Math.max(quantities.get(line.slug) ?? 0, line.quantity));
+  }
+  const order = server.map((line) => line.slug);
+  for (const line of guest) if (!order.includes(line.slug)) order.push(line.slug);
+  return order.map((slug) => ({ slug, quantity: quantities.get(slug) ?? 1 }));
+}
+
 export function CartProvider({ children }: { children: React.ReactNode }) {
+  const { status } = useSession();
+  const signedIn = status === "authenticated";
   const [lines, setLines] = useState<CartLine[]>([]);
   const [hydrated, setHydrated] = useState(false);
+  const linesRef = useRef(lines);
+  linesRef.current = lines;
+  /** True once the sign-in hydration attempt has succeeded. */
+  const serverReadyRef = useRef(false);
+  /** Hydration writes bump this so the mirror doesn't echo them back. */
+  const skipMirrorRef = useRef(0);
+  const mirrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Load once on mount (client only).
   useEffect(() => {
@@ -113,6 +186,62 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
   }, []);
+
+  // Lesson 3 P3 — on sign-in, hydrate from the server once, folding any
+  // guest lines in with one PUT (§7.3). A failed fetch stays silent: the
+  // localStorage cart keeps working and the next mount retries.
+  useEffect(() => {
+    if (!hydrated || !signedIn || serverReadyRef.current) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/cart", { cache: "no-store" });
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as { lines?: unknown };
+        const serverLines = sanitizeServerLines(data.lines);
+        if (cancelled) return;
+        const guest = linesRef.current;
+        if (guest.length === 0 && serverLines.length === 0) {
+          serverReadyRef.current = true;
+          return;
+        }
+        const merged = foldLines(serverLines, guest);
+        serverReadyRef.current = true;
+        skipMirrorRef.current += 1;
+        setLines(merged);
+        if (guest.length > 0) await mirrorLines(merged);
+      } catch {
+        // offline — stay local for this session
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [hydrated, signedIn]);
+
+  // Signed out again — the next sign-in re-hydrates from scratch.
+  useEffect(() => {
+    if (status === "unauthenticated") serverReadyRef.current = false;
+  }, [status]);
+
+  // Lesson 3 P3 — mirror every change while signed in (debounced 400 ms,
+  // fire-and-forget per R6). The localStorage persist above stays the
+  // source of truth underneath.
+  useEffect(() => {
+    if (!hydrated || !signedIn || !serverReadyRef.current) return;
+    if (skipMirrorRef.current > 0) {
+      skipMirrorRef.current -= 1;
+      return;
+    }
+    if (mirrorTimerRef.current) clearTimeout(mirrorTimerRef.current);
+    const snapshot = lines;
+    mirrorTimerRef.current = setTimeout(() => {
+      void mirrorLines(snapshot);
+    }, MIRROR_DEBOUNCE_MS);
+    return () => {
+      if (mirrorTimerRef.current) clearTimeout(mirrorTimerRef.current);
+    };
+  }, [lines, hydrated, signedIn]);
 
   const addItem = useCallback((slug: string, quantity = 1) => {
     if (!getProductBySlug(slug)) return;

@@ -63,6 +63,44 @@ export type Database = {
           },
         ];
       };
+      /**
+       * Lesson 3 P3 — server cart (supabase/cart-schema.sql). Keyed on
+       * (user_id, product_id); the API speaks slugs (PRD-LESSON3 §6.2).
+       */
+      cart_items: {
+        Row: {
+          user_id: string;
+          product_id: string;
+          quantity: number;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          product_id: string;
+          quantity: number;
+          updated_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          product_id?: string;
+          quantity?: number;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "cart_items_user_id_fkey";
+            columns: ["user_id"];
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "cart_items_product_id_fkey";
+            columns: ["product_id"];
+            referencedRelation: "products";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       users: {
         Row: {
           id: string;
@@ -231,6 +269,19 @@ export type Database = {
           p_paystack_reference?: string | null;
         };
         Returns: string;
+      };
+      /** Lesson 3 P3 — fold a guest cart into the signed-in cart (§6). */
+      merge_cart: {
+        Args: {
+          p_user_id: string;
+          p_items: Json;
+        };
+        Returns: {
+          user_id: string;
+          product_id: string;
+          quantity: number;
+          updated_at: string;
+        }[];
       };
     };
     Enums: Record<string, never>;
