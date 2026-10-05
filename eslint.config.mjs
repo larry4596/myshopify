@@ -18,6 +18,9 @@ const eslintConfig = [
       "out/**",
       "build/**",
       "next-env.d.ts",
+      // The Expo app has its own tsconfig/lint setup — Vercel must not
+      // type-check or lint it (it lives in mobile/, excluded in tsconfig too).
+      "mobile/**",
     ],
   },
 ];

@@ -210,12 +210,22 @@ export async function createOrder(
       }
     }
     console.error("[orders] create_order failed:", error.message);
-    // The most likely cause in this project: the Phase 3 function in Supabase
-    // predates the Phase 4 `p_paystack_reference` argument. Say so loudly.
-    if (/p_paystack_reference|create_order/i.test(error.message)) {
+
+    // Schema drift is the most likely cause of ANY failure in here: the function
+    // deployed in Supabase is an older copy of supabase/schema.sql. Two
+    // signatures are worth naming, because Postgres does not:
+    //   - "function ... create_order(...) does not exist"  → predates the Phase 4
+    //     p_paystack_reference argument and paystack_reference column
+    //   - "operator does not exist: record ->> unknown"    → predates the jsonb
+    //     fix for the pricing loop (v_item must be jsonb, never record, or the
+    //     loop variable holds a ROW and ->> is undefined for it)
+    // Neither message contains "create_order", so match on the shape too.
+    if (/record\s*->>|p_paystack_reference|create_order/i.test(error.message)) {
       console.error(
-        "[orders] create_order looks out of date — re-run supabase/schema.sql " +
-          "(idempotent) to add p_paystack_reference and the paystack_reference column.",
+        "[orders] create_order in the database looks out of date — re-run " +
+          "supabase/schema.sql in the Supabase SQL Editor. It is idempotent: it " +
+          "drops and replaces the function and adds the paystack_reference " +
+          "column and its unique index.",
       );
     }
     return { status: "error", message: error.message };

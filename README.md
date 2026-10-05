@@ -116,6 +116,33 @@ Order history lives in Supabase (Postgres). One-time setup:
   SQL Editor using your `users.id` (see the comment at the bottom of
   `supabase/seed.sql`).
 
+**"already used by a different user id" — why checkout says `order_failed`:**
+`users.id` is a UUIDv5 of Google's account id (`sub`, see `lib/users.ts`), and
+Google issues a **different `sub` per OAuth client id**. Signing the same Gmail
+account in through two different `GOOGLE_CLIENT_ID`s (e.g. localhost dev +
+production) therefore derives two different ids for one email, and the
+`unique(email)` constraint on `users` makes the second upsert fail — which stops
+`createOrder` before the order is ever written.
+
+`upsertUser()` now repairs this by itself: if the row holding that email has no
+orders, it is stale profile data and gets replaced by the id in use now. If it
+*does* own orders it refuses (rewriting history is not automatic) and logs what
+to fix — reconcile it by hand in the SQL Editor:
+
+```sql
+-- inspect first
+select id, email, created_at from public.users;
+select id, order_number, user_id from public.orders;
+
+-- move the orders onto the id your session uses today, then re-key the row
+update public.orders set user_id = '<current session id>'
+ where user_id = '<stale id>';
+update public.users set id = '<current session id>'
+ where id = '<stale id>';
+```
+
+Keep one `GOOGLE_CLIENT_ID` per environment so the id never drifts again.
+
 ### Paystack Test Mode setup (Phase 4)
 
 Checkout runs through Paystack's **hosted** checkout page (redirect flow), so
@@ -285,6 +312,18 @@ log line when the three variables below are missing or still placeholders.
   while the trial warms up; sandbox sends go to the authorized recipient).
 - Temporarily blank `MAILGUN_API_KEY` → checkout still succeeds and the server
   log shows the skip warning (FR5.4).
+
+**If nothing arrives, check the log line first:**
+- `Free accounts are for test purposes only… add the address to your authorized
+  recipients` (HTTP 403) — a sandbox domain (`*.mailgun.org`) can only send to
+  addresses listed under **Sending → Authorized Recipients**. Add the buyer's
+  address, or move to a verified custom domain before real customers.
+- `from` / `Mailgun responded with HTTP 400` — check `MAILGUN_FROM` is only the
+  value: `MAILGUN_FROM=NaijaBites <orders@mg.yourdomain.com>`. A pasted prefix
+  (e.g. `MAILGUN_FROM=MAILGUN_FROM=NaijaBites …`) makes the whole string the
+  sender, which Mailgun rejects.
+- `confirmation skipped … order … could not be read back` — the order write
+  failed first, so fix the Supabase error above before chasing email.
 
 ### Scripts
 
