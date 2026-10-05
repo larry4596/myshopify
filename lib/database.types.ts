@@ -18,6 +18,51 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      /**
+       * Lesson 3 P1 — one-time mobile sign-in codes (supabase/mobile-auth.sql).
+       * Near-empty by design: every row expires 60 seconds after it is written
+       * and is consumed with a single atomic DELETE … RETURNING.
+       */
+      mobile_auth_codes: {
+        Row: {
+          code: string;
+          user_id: string;
+          sub: string;
+          name: string | null;
+          email: string | null;
+          image: string | null;
+          created_at: string;
+          expires_at: string;
+        };
+        Insert: {
+          code: string;
+          user_id: string;
+          sub: string;
+          name?: string | null;
+          email?: string | null;
+          image?: string | null;
+          created_at?: string;
+          expires_at: string;
+        };
+        Update: {
+          code?: string;
+          user_id?: string;
+          sub?: string;
+          name?: string | null;
+          email?: string | null;
+          image?: string | null;
+          created_at?: string;
+          expires_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "mobile_auth_codes_user_id_fkey";
+            columns: ["user_id"];
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       users: {
         Row: {
           id: string;
